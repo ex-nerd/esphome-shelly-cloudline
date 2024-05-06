@@ -1,0 +1,176 @@
+# This configuration allows a Shelly-RGBW2 to contol an AC Infinity Cloudline
+# exhaust fan.
+#
+# This version of the config supports a pushbutton to cycle through fan speeds,
+# and expects you to use RGB LEDs as a status indicator, which will change color
+# from red to green to blue based on the fan speed.
+#
+# For the most up to date version of this config, see:
+# https://github.com/ex-nerd/esphome-shelly-cloudline
+#
+# For details about Shelly, see: https://devices.esphome.io/devices/Shelly-RGBW2
+
+esphome:
+  name: cloudline-exhaust
+  friendly_name: Cloudline Exhaust
+
+esp8266:
+  board: esp01_1m
+  restore_from_flash: true
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "${name} ESPHome"
+    password: !secret fallback_hotspot_password
+
+captive_portal:
+
+script:
+  - id: set_led
+    then:
+      lambda: |-
+        float set_brightness = id(brightness).state / 100.0;
+        if (std::isnan(set_brightness) || set_brightness > 1.0) {
+          set_brightness = 1.0;
+        }
+  
+        // If fan is off or brightness is zero, then just ensure the LED is off
+        if (!id(fan_speed).state || set_brightness < 0.1) {
+          auto call = id(rgb_led).turn_off();
+          call.set_transition_length(0);
+          call.perform();
+          return;
+        }
+  
+        // Otherwise, set the appropriate color
+        auto call = id(rgb_led).turn_on();
+        switch (id(fan_speed).speed) {
+          case 1:
+            // red
+            call.set_rgb(1.0, 0.0, 0.0);
+            break;
+          case 2:
+            // orange
+            call.set_rgb(1.0, 0.5, 0.1);
+            break;
+          case 3:
+            // yellow
+            call.set_rgb(1.0, 0.9, 0.0);
+            set_brightness *= 0.9;
+            break;
+          case 4:
+            // yellow-green
+            call.set_rgb(0.8, 1.0, 0.0);
+            set_brightness *= 0.8;
+            break;
+          case 5:
+            // green
+            call.set_rgb(0.0, 1.0, 0.1);
+            break;
+          case 6:
+            // light blue
+            call.set_rgb(0.2, 0.75, 1.0);
+            break;
+        }
+        call.set_brightness(set_brightness);
+        call.set_transition_length(0);
+        call.perform();
+
+number:
+  - platform: template
+    name: "Brightness"
+    id: "brightness"
+    unit_of_measurement: "%"
+    initial_value: 90
+    optimistic: true
+    step: 1
+    min_value: 0
+    max_value: 100
+    mode: slider
+    icon: mdi:power-settings
+    restore_value: true
+    on_value:
+      then:
+        - script.execute: set_led
+
+fan:
+  - platform: speed
+    name: "Fan"
+    id: fan_speed
+    output: pwm_fan
+    speed_count: 6
+    restore_mode: ALWAYS_OFF
+    on_turn_off:
+      # - logger.log: "Fan turned OFF"
+      - script.execute: set_led
+    on_turn_on:
+      # - logger.log: "Fan turned ON"
+      - script.execute: set_led
+    on_speed_set:
+      # - logger.log:
+      #     format: "Fan Speed was changed to %d!"
+      #     args: [ x ]
+      - script.execute: set_led
+
+light:
+  - platform: rgb
+    name: "Speed Indicator"
+    id: rgb_led
+    red: pwm_r
+    green: pwm_g
+    blue: pwm_b
+    restore_mode: ALWAYS_OFF
+    internal: true
+
+binary_sensor:
+  # Switch input
+  - platform: gpio
+    pin: GPIO5
+    id: button
+    on_press:
+      - fan.cycle_speed: fan_speed
+
+output:
+  # W connection goes to the fan
+  - platform: esp8266_pwm
+    pin: GPIO4
+    frequency: 5000 Hz
+    id: pwm_fan
+    inverted: true
+
+  # R for red LED
+  - platform: esp8266_pwm
+    pin: GPIO12
+    frequency: 1000 Hz
+    id: pwm_r
+    # Uncomment if your blue lED is dim
+    # max_power: 80%
+
+  # G for green LED
+  - platform: esp8266_pwm
+    pin: GPIO15
+    frequency: 1000 Hz
+    id: pwm_g
+    # Uncomment if your blue lED is dim
+    # max_power: 80%
+
+  # B for blue LED
+  - platform: esp8266_pwm
+    pin: GPIO14
+    frequency: 1000 Hz
+    id: pwm_b

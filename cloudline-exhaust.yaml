@@ -1,0 +1,73 @@
+# This configuration allows a Shelly-RGBW2 to contol an AC Infinity Cloudline
+# exhaust fan.
+#
+# This is the basic config with no button or status LEDs. You will need to use
+# Home Assistant to control the fan.
+#
+# For the most up to date version of this config, see:
+# https://github.com/ex-nerd/esphome-shelly-cloudline
+#
+# For details about Shelly, see: https://devices.esphome.io/devices/Shelly-RGBW2
+
+esphome:
+  name: cloudline-exhaust
+  friendly_name: Cloudline Exhaust
+
+esp8266:
+  board: esp01_1m
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "${name} ESPHome"
+    password: !secret fallback_hotspot_password
+
+captive_portal:
+
+fan:
+  - platform: speed
+    name: "Fan"
+    id: fan_speed
+    output: pwm_fan
+    speed_count: 6
+    restore_mode: ALWAYS_OFF
+
+output:
+  # W connection goes to the fan
+  - platform: esp8266_pwm
+    pin: GPIO4
+    frequency: 5000 Hz
+    id: pwm_fan
+    inverted: true
+
+  # R for red LED
+  # - platform: esp8266_pwm
+  #   pin: GPIO12
+  #   frequency: 1000 Hz
+  #   id: pwm_r
+
+  # G for green LED
+  # - platform: esp8266_pwm
+  #   pin: GPIO15
+  #   frequency: 1000 Hz
+  #   id: pwm_g
+
+  # B for blue LED
+  # - platform: esp8266_pwm
+  #   pin: GPIO14
+  #   frequency: 1000 Hz
+  #   id: pwm_b

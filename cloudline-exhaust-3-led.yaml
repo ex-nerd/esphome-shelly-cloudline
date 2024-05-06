@@ -1,0 +1,195 @@
+# This configuration allows a Shelly-RGBW2 to contol an AC Infinity Cloudline
+# exhaust fan.
+#
+# This version of the config supports a pushbutton to cycle through fan speeds,
+# and expects you to use 3 separate LEDs as a status indicator, which will light
+# individually 1-2-3 based on the fan speed.
+#
+# For the most up to date version of this config, see:
+# https://github.com/ex-nerd/esphome-shelly-cloudline
+#
+# For details about Shelly, see: https://devices.esphome.io/devices/Shelly-RGBW2
+
+esphome:
+  name: cloudline-exhaust
+  friendly_name: Cloudline Exhaust
+
+esp8266:
+  board: esp01_1m
+  restore_from_flash: true
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "${name} ESPHome"
+    password: !secret fallback_hotspot_password
+
+captive_portal:
+
+script:
+  - id: set_led
+    then:
+      lambda: |-
+
+        float set_brightness = id(brightness).state / 100.0;
+        if (std::isnan(set_brightness) || set_brightness > 1.0) {
+          set_brightness = 1.0;
+        }
+
+        // If fan is off or brightness is zero, then just ensure the LED is off
+        if (!id(fan_speed).state || set_brightness < 0.1) {
+          auto call = id(led1).turn_off();
+          call.set_transition_length(0);
+          call.perform();
+          call = id(led2).turn_off();
+          call.set_transition_length(0);
+          call.perform();
+          call = id(led3).turn_off();
+          call.set_transition_length(0);
+          call.perform();
+          return;
+        }
+
+        // Otherwise, set the appropriate brightness for each segment
+        auto speed = id(fan_speed).speed;
+        if (speed <= 2) {
+            auto call1 = id(led1).turn_on();
+            call1.set_brightness(speed == 2 ? set_brightness : set_brightness * .5);
+            call1.set_transition_length(0);
+            call1.perform();
+            auto call2 = id(led2).turn_off();
+            call2.set_transition_length(0);
+            call2.perform();
+            auto call3 = id(led3).turn_off();
+            call3.set_transition_length(0);
+            call3.perform();
+        } else if (speed <= 4) {
+            auto call1 = id(led1).turn_on();
+            call1.set_brightness(set_brightness);
+            call1.set_transition_length(0);
+            call1.perform();
+            auto call2 = id(led2).turn_on();
+            call2.set_brightness(speed == 4 ? set_brightness : set_brightness * .5);
+            call2.set_transition_length(0);
+            call2.perform();
+            auto call3 = id(led3).turn_off();
+            call3.set_transition_length(0);
+            call3.perform();
+        } else {
+            auto call1 = id(led1).turn_on();
+            call1.set_brightness(set_brightness);
+            call1.set_transition_length(0);
+            call1.perform();
+            auto call2 = id(led2).turn_on();
+            call2.set_brightness(set_brightness);
+            call2.set_transition_length(0);
+            call2.perform();
+            auto call3 = id(led3).turn_on();
+            call3.set_brightness(speed == 6 ? set_brightness : set_brightness * .5);
+            call3.set_transition_length(0);
+            call3.perform();
+        }
+
+number:
+  - platform: template
+    name: "Brightness"
+    id: "brightness"
+    unit_of_measurement: "%"
+    initial_value: 90
+    optimistic: true
+    step: 1
+    min_value: 0
+    max_value: 100
+    mode: slider
+    icon: mdi:power-settings
+    restore_value: true
+    on_value:
+      then:
+        - script.execute: set_led
+
+fan:
+  - platform: speed
+    name: "Fan"
+    id: fan_speed
+    output: pwm_fan
+    speed_count: 6
+    restore_mode: ALWAYS_OFF
+    on_turn_off:
+      # - logger.log: "Fan turned OFF"
+      - script.execute: set_led
+    on_turn_on:
+      # - logger.log: "Fan turned ON"
+      - script.execute: set_led
+    on_speed_set:
+      # - logger.log:
+      #     format: "Fan Speed was changed to %d!"
+      #     args: [ x ]
+      - script.execute: set_led
+
+light:
+  - platform: monochromatic
+    name: LED1
+    id: led1
+    output: pwm_r
+    restore_mode: ALWAYS_OFF
+    internal: true
+  - platform: monochromatic
+    name: LED2
+    id: led2
+    output: pwm_g
+    restore_mode: ALWAYS_OFF
+    internal: true
+  - platform: monochromatic
+    name: LED3
+    id: led3
+    output: pwm_b
+    restore_mode: ALWAYS_OFF
+    internal: true
+
+binary_sensor:
+  # Switch input
+  - platform: gpio
+    pin: GPIO5
+    id: button
+    on_press:
+      - fan.cycle_speed: fan_speed
+
+output:
+  # W connection goes to the fan
+  - platform: esp8266_pwm
+    pin: GPIO4
+    frequency: 5000 Hz
+    id: pwm_fan
+    inverted: true
+
+  # R for LED 1
+  - platform: esp8266_pwm
+    pin: GPIO12
+    frequency: 1000 Hz
+    id: pwm_r
+
+  # G for LED 2
+  - platform: esp8266_pwm
+    pin: GPIO15
+    frequency: 1000 Hz
+    id: pwm_g
+
+  # B for LED 3
+  - platform: esp8266_pwm
+    pin: GPIO14
+    frequency: 1000 Hz
+    id: pwm_b
